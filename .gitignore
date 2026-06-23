@@ -1,0 +1,10 @@
+# clasp / Apps Script — contains script ID and local config
+.clasp.json
+gas/.clasp.json
+
+# Never commit OAuth credentials (lives in $HOME, but guard anyway)
+.clasprc.json
+
+# OS / editor cruft
+.DS_Store
+*.swp
