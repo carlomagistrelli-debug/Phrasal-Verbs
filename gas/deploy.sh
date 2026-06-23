@@ -17,6 +17,8 @@ else
 fi
 
 # 2. Push code to Apps Script and redeploy the web app
+# --force skips the interactive "manifest changed, overwrite?" prompt, which
+# otherwise auto-declines in this non-TTY environment and silently skips the push.
 cd "$DIR"
-clasp push
+clasp push --force
 clasp deploy --deploymentId AKfycbyOMjOs25VRPpNdIUvpvYuDpZ-5j6joMayfhgXQiDaGlrXnEmCm51NlFwBFmjvLnw6a --description "$MSG"
