@@ -350,11 +350,55 @@ let sessionCards = [];   // the card set of the current session, for "Study agai
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
+// ── Identity (name-based, stored in this browser) ─────────────────────────────
+const USER_KEY_STORAGE = 'pv_user';
+let USER_KEY = (localStorage.getItem(USER_KEY_STORAGE) || '').trim();
+
 // ── Initialization ────────────────────────────────────────────────────────────
-google.script.run
-  .withSuccessHandler(onDataLoaded)
-  .withFailureHandler(onLoadError)
-  .getInitialData();
+if (USER_KEY) {
+  loadData();
+} else {
+  promptForName();
+}
+
+function loadData() {
+  document.getElementById('loading').style.display = 'flex';
+  google.script.run
+    .withSuccessHandler(onDataLoaded)
+    .withFailureHandler(onLoadError)
+    .getInitialData(USER_KEY);
+}
+
+function promptForName() {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').innerHTML = `
+    <div class="screen">
+      <div class="screen-icon">👋</div>
+      <h2>Welcome!</h2>
+      <p>Enter a name so your progress is saved and synced across your devices.</p>
+      <div style="margin-top:18px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <input id="name-input" type="text" maxlength="60" placeholder="Your name"
+               style="padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem"
+               onkeydown="if(event.key==='Enter')saveName()">
+        <button class="btn btn-primary" onclick="saveName()">Start</button>
+      </div>
+    </div>`;
+  setTimeout(() => { const el = document.getElementById('name-input'); if (el) el.focus(); }, 50);
+}
+
+function saveName() {
+  const v = (document.getElementById('name-input').value || '').trim();
+  if (!v) { document.getElementById('name-input').focus(); return; }
+  USER_KEY = v;
+  localStorage.setItem(USER_KEY_STORAGE, v);
+  loadData();
+}
+
+function changeName() {
+  localStorage.removeItem(USER_KEY_STORAGE);
+  USER_KEY = '';
+  promptForName();
+}
 
 function onDataLoaded(data) {
   allCards      = data.cards    || [];
@@ -362,7 +406,8 @@ function onDataLoaded(data) {
   newTodayCache = data.newToday || {};
   settingsCache = data.settings || {};
 
-  document.getElementById('user-email').textContent = data.user || '';
+  document.getElementById('user-email').innerHTML =
+    `${data.user || ''} · <a href="#" onclick="changeName();return false" style="color:var(--muted)">change</a>`;
 
   mode      = settingsCache.mode      || 'verb-first';
   useFilter = settingsCache.useFilter || false;
@@ -393,7 +438,7 @@ function persistSRS(d) {
   srsCache = d;
   google.script.run
     .withFailureHandler(e => console.error('SRS save failed:', e))
-    .saveSRS(d);
+    .saveSRS(d, USER_KEY);
 }
 
 // ── New-cards-today quota ─────────────────────────────────────────────────────
@@ -405,7 +450,7 @@ function addNewUsed(n) {
   newTodayCache = { date: TODAY, count: getNewUsed() + n };
   google.script.run
     .withFailureHandler(e => console.error('NewToday save failed:', e))
-    .saveNewToday(newTodayCache);
+    .saveNewToday(newTodayCache, USER_KEY);
 }
 
 // ── Settings save ─────────────────────────────────────────────────────────────
@@ -418,7 +463,7 @@ function persistSettings() {
   };
   google.script.run
     .withFailureHandler(e => console.error('Settings save failed:', e))
-    .saveSettings(settingsCache);
+    .saveSettings(settingsCache, USER_KEY);
 }
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -827,7 +872,7 @@ function resetProgress() {
   google.script.run
     .withSuccessHandler(() => showStatus('Progress reset.', 'ok', 2000))
     .withFailureHandler(e  => showStatus('Reset failed: ' + e.message, 'err'))
-    .resetProgress();
+    .resetProgress(USER_KEY);
   renderApp();
 }
 

@@ -1,7 +1,12 @@
 // Deploy: Extensions → Apps Script → Deploy → New deployment
 //   Type:       Web app
-//   Execute as: User accessing the web app   ← required for per-user progress
-//   Access:     Anyone with a Google account
+//   Execute as: Me (the deploying user)      ← so external users never hit the
+//                                              authorization / unverified-app wall
+//   Access:     Anyone, even anonymous       ← no Google sign-in required
+//
+// Identity is name-based: the client sends a userKey (a name the visitor picks,
+// stored in their browser) with every call. The script runs as the owner, so it
+// can always reach the spreadsheet regardless of who is visiting.
 
 const SPREADSHEET_ID = '1v8h1SJ-n5OW0ntrwnmcLsx_7_OhGmsZDl19g0hSM1Q0';
 const CARDS_SHEET    = '150 Most Common Phrasal Verbs';
@@ -14,46 +19,49 @@ function doGet() {
 }
 
 // Called once on page load – returns everything in a single round-trip
-function getInitialData() {
-  const email = Session.getActiveUser().getEmail() || 'anonymous';
-  const row   = findUserRow_(email);
+function getInitialData(userKey) {
+  const key = normalizeKey_(userKey);
+  const row = findUserRow_(key);
   return {
     cards:    getCards_(),
     srs:      parseCell_(row, 1, {}),
     newToday: parseCell_(row, 2, {}),
     settings: parseCell_(row, 3, {}),
-    user:     email,
+    user:     key,
   };
 }
 
-function saveSRS(json) {
+function saveSRS(json, userKey) {
   const sheet = getProgressSheet_();
-  const row   = findOrCreateUserRow_(getEmail_(), sheet);
+  const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
   sheet.getRange(row, 2).setValue(JSON.stringify(json));
 }
 
-function saveNewToday(json) {
+function saveNewToday(json, userKey) {
   const sheet = getProgressSheet_();
-  const row   = findOrCreateUserRow_(getEmail_(), sheet);
+  const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
   sheet.getRange(row, 3).setValue(JSON.stringify(json));
 }
 
-function saveSettings(json) {
+function saveSettings(json, userKey) {
   const sheet = getProgressSheet_();
-  const row   = findOrCreateUserRow_(getEmail_(), sheet);
+  const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
   sheet.getRange(row, 4).setValue(JSON.stringify(json));
 }
 
-function resetProgress() {
+function resetProgress(userKey) {
   const sheet = getProgressSheet_();
-  const row   = findOrCreateUserRow_(getEmail_(), sheet);
+  const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
   sheet.getRange(row, 2, 1, 2).setValues([['', '']]);
 }
 
 // ── Private helpers ────────────────────────────────────────────────────────────
 
-function getEmail_() {
-  return Session.getActiveUser().getEmail() || 'anonymous';
+// The client-supplied name is the identity key. Trim it, cap its length, and
+// fall back to 'anonymous' so a blank key can never address an empty-named row.
+function normalizeKey_(userKey) {
+  const k = String(userKey == null ? '' : userKey).trim().slice(0, 60);
+  return k || 'anonymous';
 }
 
 function getCards_() {
@@ -84,7 +92,7 @@ function getProgressSheet_() {
   let   sheet = ss.getSheetByName(PROGRESS_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(PROGRESS_SHEET);
-    sheet.appendRow(['Email', 'SRS Data', 'New Today', 'Settings']);
+    sheet.appendRow(['User', 'SRS Data', 'New Today', 'Settings']);
     sheet.getRange(1, 1, 1, 4).setFontWeight('bold');
     sheet.setColumnWidth(1, 220);
     sheet.setColumnWidth(2, 400);
