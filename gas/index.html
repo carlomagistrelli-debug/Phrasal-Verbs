@@ -589,6 +589,7 @@ function renderCaughtUp() {
   const tomorrow = addDays(TODAY, 1);
   const due2moro = pool.filter(c => getRec(srs, c).due === tomorrow).length;
   const moreNew  = countRemainingNew();
+  const studied  = pool.filter(c => getRec(srs, c).due).length;
   const npd      = Math.max(1, parseInt(document.getElementById('npd').value) || 10);
 
   document.getElementById('app').innerHTML = `
@@ -598,9 +599,14 @@ function renderCaughtUp() {
       <p>No cards due today. Come back tomorrow.</p>
       ${due2moro ? `<p class="sub">Due tomorrow: <strong>${due2moro}</strong></p>` : ''}
       ${moreNew   ? `<p class="sub">New cards waiting: <strong>${moreNew}</strong></p>` : ''}
-      ${moreNew   ? `<button class="btn btn-ghost" style="margin-top:20px" onclick="studyMore()">
-                       + Study ${Math.min(npd, moreNew)} more new cards
-                     </button>` : ''}
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:20px;flex-wrap:wrap">
+        ${moreNew  ? `<button class="btn btn-ghost" onclick="studyMore()">
+                         + Study ${Math.min(npd, moreNew)} more new cards
+                       </button>` : ''}
+        ${studied  ? `<button class="btn btn-primary" onclick="revise()">
+                         🔁 Revise ${studied} card${studied !== 1 ? 's' : ''}
+                       </button>` : ''}
+      </div>
     </div>`;
 }
 
@@ -624,6 +630,7 @@ function renderComplete() {
         ${moreNew ? `<button class="btn btn-ghost" onclick="studyMore()">
                        + Study ${Math.min(npd, moreNew)} more new cards
                      </button>` : ''}
+        <button class="btn btn-ghost" onclick="revise()">🔁 Revise</button>
         <button class="btn btn-primary" onclick="studyAgain()">Study again</button>
       </div>
     </div>`;
@@ -635,6 +642,23 @@ function studyMore() {
     showStatus('No more new cards available.', 'ok', 2000);
     return;
   }
+  renderSession();
+}
+
+// Cram mode: re-study every card you've already learned, ignoring due dates.
+// Unlike "Study again", this rebuilds from the SRS data, so it works on a fresh
+// page load (e.g. from the "All caught up!" screen). Ratings update SRS as usual.
+function revise() {
+  const srs  = loadSRS();
+  const seen = getPool().filter(c => getRec(srs, c).due);   // already studied at least once
+  if (!seen.length) { showStatus('No cards to revise yet.', 'ok', 2000); return; }
+  sessionCards = shuffle(seen.slice());
+  queue     = sessionCards.map(card => ({ card, vFirst: pickVFirst(), isNew: false }));
+  againBuf  = [];
+  stats     = { again: 0, hard: 0, good: 0, easy: 0 };
+  qIdx      = 0;
+  flipped   = false;
+  totalSeen = 0;
   renderSession();
 }
 
