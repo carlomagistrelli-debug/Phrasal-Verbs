@@ -254,6 +254,35 @@
   .stat-hard  { background: #ffedd5; color: #9a3412; }
   .stat-good  { background: #dcfce7; color: #14532d; }
   .stat-easy  { background: #dbeafe; color: #1e40af; }
+
+  /* ── Mobile overrides (≤ 600 px) ────────────────────────────────────── */
+  @media (max-width: 600px) {
+    body { padding: 16px 12px 64px; }
+
+    header h1 { font-size: 1.35rem; }
+    header p  { font-size: .85rem; }
+
+    .card-wrap   { height: 340px; }
+    .card-verb   { font-size: 2.3rem; }
+    .card-meaning { font-size: 1.05rem; }
+    .card-example { font-size: .92rem; }
+
+    .rate-btn   { padding: 18px 6px; }
+    .rate-label { font-size: 1rem; }
+    .rate-int   { font-size: .8rem; }
+
+    .kbd-hint { display: none; }
+
+    .pill-count { font-size: .88rem; padding: 5px 14px; }
+
+    .screen    { padding: 36px 16px; }
+    .screen h2 { font-size: 1.3rem; }
+    .screen p  { font-size: .92rem; }
+
+    .btn { padding: 12px 22px; font-size: .95rem; }
+
+    .stat { font-size: .88rem; padding: 8px 16px; }
+  }
 </style>
 </head>
 <body>
