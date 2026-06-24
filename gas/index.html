@@ -340,13 +340,14 @@ let settingsCache = {};
 let mode      = 'verb-first';
 let useFilter = false;
 
-let queue        = [];
-let qIdx         = 0;
-let againBuf     = [];
-let flipped      = false;
-let stats        = { again: 0, hard: 0, good: 0, easy: 0 };
-let totalSeen    = 0;
-let sessionCards = [];   // the card set of the current session, for "Study again"
+let queue             = [];
+let qIdx              = 0;
+let againBuf          = [];
+let flipped           = false;
+let stats             = { again: 0, hard: 0, good: 0, easy: 0 };
+let totalSeen         = 0;
+let sessionCards      = [];   // the card set of the current session, for "Study again"
+let sessionUniqueCount = 0;   // unique cards in this session (excludes Again re-shows)
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -559,13 +560,14 @@ function buildSession(bonusNew = 0) {
     combined.splice(pos, 0, c);
   });
 
-  sessionCards = combined.slice();
-  queue    = combined.map(card => ({ card, vFirst: pickVFirst(), isNew: !getRec(srs, card).due }));
-  againBuf = [];
-  stats    = { again: 0, hard: 0, good: 0, easy: 0 };
-  qIdx     = 0;
-  flipped  = false;
-  totalSeen = 0;
+  sessionCards       = combined.slice();
+  queue              = combined.map(card => ({ card, vFirst: pickVFirst(), isNew: !getRec(srs, card).due }));
+  againBuf           = [];
+  stats              = { again: 0, hard: 0, good: 0, easy: 0 };
+  qIdx               = 0;
+  flipped            = false;
+  totalSeen          = 0;
+  sessionUniqueCount = queue.length;
 
   return true;
 }
@@ -656,15 +658,16 @@ function renderCaughtUp() {
 }
 
 function renderComplete() {
-  const total   = stats.again + stats.hard + stats.good + stats.easy;
-  const moreNew = countRemainingNew();
-  const npd     = Math.max(1, parseInt(document.getElementById('npd').value) || 10);
+  const totalRatings = stats.again + stats.hard + stats.good + stats.easy;
+  const extraPasses  = totalRatings - sessionUniqueCount;
+  const moreNew      = countRemainingNew();
+  const npd          = Math.max(1, parseInt(document.getElementById('npd').value) || 10);
 
   document.getElementById('app').innerHTML = `
     <div class="screen">
       <div class="screen-icon">✅</div>
       <h2>Session complete!</h2>
-      <p>You rated <strong>${total}</strong> card${total !== 1 ? 's' : ''} today.</p>
+      <p>You studied <strong>${sessionUniqueCount}</strong> card${sessionUniqueCount !== 1 ? 's' : ''} today.${extraPasses > 0 ? ` <span style="color:var(--muted);font-size:.85em">(+${extraPasses} extra pass${extraPasses !== 1 ? 'es' : ''} on Again cards)</span>` : ''}</p>
       <div class="stat-row">
         <span class="stat stat-again">Again <strong>${stats.again}</strong></span>
         <span class="stat stat-hard">Hard <strong>${stats.hard}</strong></span>
@@ -697,13 +700,14 @@ function revise() {
   const srs  = loadSRS();
   const seen = getPool().filter(c => getRec(srs, c).due);   // already studied at least once
   if (!seen.length) { showStatus('No cards to revise yet.', 'ok', 2000); return; }
-  sessionCards = shuffle(seen.slice());
-  queue     = sessionCards.map(card => ({ card, vFirst: pickVFirst(), isNew: false }));
-  againBuf  = [];
-  stats     = { again: 0, hard: 0, good: 0, easy: 0 };
-  qIdx      = 0;
-  flipped   = false;
-  totalSeen = 0;
+  sessionCards       = shuffle(seen.slice());
+  queue              = sessionCards.map(card => ({ card, vFirst: pickVFirst(), isNew: false }));
+  againBuf           = [];
+  stats              = { again: 0, hard: 0, good: 0, easy: 0 };
+  qIdx               = 0;
+  flipped            = false;
+  totalSeen          = 0;
+  sessionUniqueCount = queue.length;
   renderSession();
 }
 
@@ -711,12 +715,13 @@ function revise() {
 // no due-date filtering. Ratings still update SRS as usual.
 function studyAgain() {
   if (!sessionCards.length) { renderApp(); return; }
-  queue     = shuffle(sessionCards.slice()).map(card => ({ card, vFirst: pickVFirst(), isNew: false }));
-  againBuf  = [];
-  stats     = { again: 0, hard: 0, good: 0, easy: 0 };
-  qIdx      = 0;
-  flipped   = false;
-  totalSeen = 0;
+  queue              = shuffle(sessionCards.slice()).map(card => ({ card, vFirst: pickVFirst(), isNew: false }));
+  againBuf           = [];
+  stats              = { again: 0, hard: 0, good: 0, easy: 0 };
+  qIdx               = 0;
+  flipped            = false;
+  totalSeen          = 0;
+  sessionUniqueCount = queue.length;
   renderSession();
 }
 
