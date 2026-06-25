@@ -89,6 +89,9 @@
   .modal textarea { resize: vertical; min-height: 54px; }
   .modal input[type="text"]:focus, .modal textarea:focus { border-color: var(--primary); }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+  .ac-warn { display: none; font-size: .76rem; color: #b91c1c; margin-top: 6px; }
+  .ac-warn.show { display: block; }
+  .modal input[type="text"].invalid { border-color: #b91c1c; }
 
   .field { margin-bottom: 16px; }
   .field:last-child { margin-bottom: 0; }
@@ -431,7 +434,9 @@
     <div class="field">
       <span class="field-label">Phrasal Verb</span>
       <input type="text" id="ac-verb" maxlength="120" placeholder="e.g. carry on"
+             onblur="checkAcVerb()" oninput="clearAcVerbWarn()"
              onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('ac-meaning').focus()}">
+      <div class="ac-warn" id="ac-verb-warn"></div>
     </div>
     <div class="field">
       <span class="field-label">Meaning</span>
@@ -1042,8 +1047,28 @@ function openAddCard() {
 
   ['ac-verb', 'ac-meaning', 'ac-example'].forEach(id =>
     document.getElementById(id).value = '');
+  clearAcVerbWarn();
   document.getElementById('addcard-overlay').classList.add('open');
   setTimeout(() => document.getElementById('ac-verb').focus(), 50);
+}
+
+// Warn inline as soon as the user leaves the Phrasal Verb box if it already exists.
+function checkAcVerb() {
+  const verb = document.getElementById('ac-verb').value.trim();
+  const warn = document.getElementById('ac-verb-warn');
+  const box  = document.getElementById('ac-verb');
+  if (verb && allCards.some(c => c.verb.toLowerCase() === verb.toLowerCase())) {
+    warn.textContent = `"${verb}" is already in the list.`;
+    warn.classList.add('show');
+    box.classList.add('invalid');
+  } else {
+    clearAcVerbWarn();
+  }
+}
+
+function clearAcVerbWarn() {
+  document.getElementById('ac-verb-warn').classList.remove('show');
+  document.getElementById('ac-verb').classList.remove('invalid');
 }
 
 // Reveal the free-text field only when "+ New category…" is chosen.
