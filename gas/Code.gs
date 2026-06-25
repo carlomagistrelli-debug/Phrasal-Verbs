@@ -9,7 +9,7 @@
 // can always reach the spreadsheet regardless of who is visiting.
 
 const SPREADSHEET_ID = '1v8h1SJ-n5OW0ntrwnmcLsx_7_OhGmsZDl19g0hSM1Q0';
-const CARDS_SHEET    = '150 Most Common Phrasal Verbs';
+const CARDS_SHEET    = 'Common Phrasal Verbs';
 const PROGRESS_SHEET = 'Progress';
 
 function doGet() {
