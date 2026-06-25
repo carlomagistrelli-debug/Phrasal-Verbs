@@ -67,6 +67,29 @@
   }
   .settings-panel.open { display: block; }
 
+  /* ── Modal (add a phrasal verb) ──────────────────── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,.45); padding: 16px;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; width: 100%; max-width: 440px;
+    box-shadow: var(--shadow-sm); max-height: 90vh; overflow-y: auto;
+  }
+  .modal h3 { font-size: 1.05rem; font-weight: 800; color: var(--primary); }
+  .modal p.sub { font-size: .78rem; color: var(--muted); margin: 4px 0 16px; }
+  .modal input[type="text"], .modal textarea {
+    width: 100%; padding: 9px 12px; border: 1.5px solid var(--border);
+    border-radius: 9px; font-size: .92rem; color: var(--text); background: #fff;
+    outline: none; font-family: inherit;
+  }
+  .modal textarea { resize: vertical; min-height: 54px; }
+  .modal input[type="text"]:focus, .modal textarea:focus { border-color: var(--primary); }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
   .field { margin-bottom: 16px; }
   .field:last-child { margin-bottom: 0; }
   .field-label {
@@ -380,6 +403,10 @@
       <button class="btn btn-ghost" onclick="resetProgress()" style="font-size:.82rem;padding:7px 14px">
         Reset all progress
       </button>
+      <a href="#" onclick="openAddCard();return false"
+         style="font-size:.82rem;color:var(--primary);font-weight:600">
+        + Add a phrasal verb
+      </a>
       <a href="https://docs.google.com/spreadsheets/d/1v8h1SJ-n5OW0ntrwnmcLsx_7_OhGmsZDl19g0hSM1Q0/edit"
          target="_blank" rel="noopener" style="font-size:.82rem;color:var(--primary)">
         Open Google Sheet ↗
@@ -394,6 +421,38 @@
 
 <!-- ── App ───────────────────────────────────────── -->
 <div id="app"></div>
+
+<!-- ── Add-a-phrasal-verb modal ──────────────────── -->
+<div class="modal-overlay" id="addcard-overlay" onclick="if(event.target===this)closeAddCard()">
+  <div class="modal">
+    <h3>Add a phrasal verb</h3>
+    <p class="sub">Added to the shared list for everyone. Duplicates are not allowed.</p>
+
+    <div class="field">
+      <span class="field-label">Phrasal Verb</span>
+      <input type="text" id="ac-verb" maxlength="120" placeholder="e.g. carry on"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('ac-meaning').focus()}">
+    </div>
+    <div class="field">
+      <span class="field-label">Meaning</span>
+      <textarea id="ac-meaning" maxlength="400" placeholder="e.g. to continue"></textarea>
+    </div>
+    <div class="field">
+      <span class="field-label">Example</span>
+      <textarea id="ac-example" maxlength="400" placeholder="e.g. Carry on with your work."></textarea>
+    </div>
+    <div class="field">
+      <span class="field-label">Category</span>
+      <input type="text" id="ac-category" list="ac-catlist" maxlength="80" placeholder="e.g. Work">
+      <datalist id="ac-catlist"></datalist>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost"   onclick="closeAddCard()"  style="font-size:.85rem;padding:8px 16px">Cancel</button>
+      <button class="btn btn-primary" id="ac-save" onclick="submitAddCard()" style="font-size:.85rem;padding:8px 16px">Add</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── In-memory caches (loaded once from server, written back async) ─────────────
@@ -960,9 +1019,71 @@ function populateCategories() {
   });
 }
 
+// ── Add a phrasal verb ──────────────────────────────────────────────────────────
+function openAddCard() {
+  // Offer existing categories as suggestions, but allow a brand-new one.
+  const cats = [...new Set(allCards.map(c => c.category).filter(Boolean))].sort();
+  const dl   = document.getElementById('ac-catlist');
+  dl.innerHTML = '';
+  cats.forEach(c => { const o = document.createElement('option'); o.value = c; dl.appendChild(o); });
+
+  ['ac-verb', 'ac-meaning', 'ac-example', 'ac-category'].forEach(id =>
+    document.getElementById(id).value = '');
+  document.getElementById('addcard-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('ac-verb').focus(), 50);
+}
+
+function closeAddCard() {
+  document.getElementById('addcard-overlay').classList.remove('open');
+}
+
+function submitAddCard() {
+  const verb     = document.getElementById('ac-verb').value.trim();
+  const meaning  = document.getElementById('ac-meaning').value.trim();
+  const example  = document.getElementById('ac-example').value.trim();
+  const category = document.getElementById('ac-category').value.trim();
+
+  if (!verb)    { showStatus('Please enter the phrasal verb.', 'err', 2500); document.getElementById('ac-verb').focus();    return; }
+  if (!meaning) { showStatus('Please enter the meaning.',      'err', 2500); document.getElementById('ac-meaning').focus(); return; }
+
+  // Fast client-side duplicate check; the server re-checks authoritatively.
+  if (allCards.some(c => c.verb.toLowerCase() === verb.toLowerCase())) {
+    showStatus(`"${verb}" is already in the list.`, 'err', 3000);
+    return;
+  }
+
+  const btn = document.getElementById('ac-save');
+  btn.disabled = true; btn.textContent = 'Adding…';
+
+  google.script.run
+    .withSuccessHandler(res => {
+      btn.disabled = false; btn.textContent = 'Add';
+      if (!res || !res.ok) {
+        const msg = res && res.reason === 'duplicate'
+          ? `"${verb}" is already in the list.`
+          : (res && res.reason) || 'Could not add the card.';
+        showStatus(msg, 'err', 3000);
+        return;
+      }
+      allCards.push(res.card);
+      populateCategories();
+      closeAddCard();
+      showStatus(`Added "${res.card.verb}".`, 'ok', 2200);
+    })
+    .withFailureHandler(e => {
+      btn.disabled = false; btn.textContent = 'Add';
+      showStatus('Save failed: ' + String(e.message || e), 'err', 4000);
+    })
+    .addCard({ verb, meaning, example, category }, USER_KEY);
+}
+
 // ── Keyboard ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (document.getElementById('addcard-overlay').classList.contains('open')) {
+    if (e.key === 'Escape') closeAddCard();
+    return;  // don't let study shortcuts fire while the add-card modal is open
+  }
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
   if (!queue.length || qIdx >= queue.length) return;
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flipCard(); }
   if (flipped) {

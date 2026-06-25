@@ -55,6 +55,42 @@ function resetProgress(userKey) {
   sheet.getRange(row, 2, 1, 2).setValues([['', '']]);
 }
 
+// Append a new phrasal verb to the shared cards sheet.
+// Rejects duplicates (case-insensitive on the phrasal verb itself).
+// Returns { ok: true, card } on success, or { ok: false, reason } otherwise.
+function addCard(card, userKey) {
+  const verb     = String(card && card.verb     || '').trim();
+  const meaning  = String(card && card.meaning  || '').trim();
+  const example  = String(card && card.example  || '').trim();
+  const category = String(card && card.category || '').trim();
+  if (!verb)    return { ok: false, reason: 'The phrasal verb is required.' };
+  if (!meaning) return { ok: false, reason: 'The meaning is required.' };
+
+  const sheet = getCardsSheet_();
+  if (!sheet) return { ok: false, reason: 'Cards sheet not found.' };
+
+  const data   = sheet.getDataRange().getValues();
+  const header = data[0].map(h => String(h).toLowerCase().trim());
+  const iV = header.findIndex(h => h.includes('verb'));
+  const iM = header.findIndex(h => h.includes('mean'));
+  const iE = header.findIndex(h => h.includes('ex'));
+  const iC = header.findIndex(h => h.includes('cat'));
+
+  // Duplicate check — authoritative, server-side, case-insensitive on the verb.
+  const dup = data.slice(1).some(r =>
+    String(r[iV] || '').trim().toLowerCase() === verb.toLowerCase());
+  if (dup) return { ok: false, reason: 'duplicate' };
+
+  const rowArr = new Array(header.length).fill('');
+  if (iV >= 0) rowArr[iV] = verb;
+  if (iM >= 0) rowArr[iM] = meaning;
+  if (iE >= 0) rowArr[iE] = example;
+  if (iC >= 0) rowArr[iC] = category;
+  sheet.appendRow(rowArr);
+
+  return { ok: true, card: { verb: verb, meaning: meaning, example: example, category: category } };
+}
+
 // ── Private helpers ────────────────────────────────────────────────────────────
 
 // The client-supplied name is the identity key. Trim it, cap its length, and
@@ -64,12 +100,17 @@ function normalizeKey_(userKey) {
   return k || 'anonymous';
 }
 
-function getCards_() {
+// The cards tab may be named anything (Google often leaves it "Untitled").
+// Prefer the configured name, else fall back to the first non-Progress tab.
+function getCardsSheet_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  // The cards tab may be named anything (Google often leaves it "Untitled").
-  // Prefer the configured name, else fall back to the first non-Progress tab.
-  const sheet = ss.getSheetByName(CARDS_SHEET)
-             || ss.getSheets().filter(s => s.getName() !== PROGRESS_SHEET)[0];
+  return ss.getSheetByName(CARDS_SHEET)
+      || ss.getSheets().filter(s => s.getName() !== PROGRESS_SHEET)[0]
+      || null;
+}
+
+function getCards_() {
+  const sheet = getCardsSheet_();
   if (!sheet) return [];
   const data   = sheet.getDataRange().getValues();
   const header = data[0].map(h => String(h).toLowerCase().trim());
