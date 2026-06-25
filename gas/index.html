@@ -443,8 +443,9 @@
     </div>
     <div class="field">
       <span class="field-label">Category</span>
-      <input type="text" id="ac-category" list="ac-catlist" maxlength="80" placeholder="e.g. Work">
-      <datalist id="ac-catlist"></datalist>
+      <select id="ac-cat-sel" onchange="onAcCatChange()"></select>
+      <input type="text" id="ac-cat-new" maxlength="80" placeholder="New category name"
+             style="display:none;margin-top:8px">
     </div>
 
     <div class="modal-actions">
@@ -456,10 +457,11 @@
 
 <script>
 // ── In-memory caches (loaded once from server, written back async) ─────────────
-let allCards      = [];
-let srsCache      = {};
-let newTodayCache = {};
-let settingsCache = {};
+let allCards       = [];
+let srsCache       = {};
+let newTodayCache  = {};
+let settingsCache  = {};
+let categoriesCache = [];   // canonical list from the "Categories" tab
 
 // ── Session state ─────────────────────────────────────────────────────────────
 let mode      = 'verb-first';
@@ -527,10 +529,11 @@ function changeName() {
 }
 
 function onDataLoaded(data) {
-  allCards      = data.cards    || [];
-  srsCache      = data.srs      || {};
-  newTodayCache = data.newToday || {};
-  settingsCache = data.settings || {};
+  allCards        = data.cards      || [];
+  srsCache        = data.srs        || {};
+  newTodayCache   = data.newToday   || {};
+  settingsCache   = data.settings   || {};
+  categoriesCache = data.categories || [];
 
   document.getElementById('user-email').innerHTML =
     `${data.user || ''} · <a href="#" onclick="changeName();return false" style="color:var(--muted)">change</a>`;
@@ -1021,16 +1024,39 @@ function populateCategories() {
 
 // ── Add a phrasal verb ──────────────────────────────────────────────────────────
 function openAddCard() {
-  // Offer existing categories as suggestions, but allow a brand-new one.
-  const cats = [...new Set(allCards.map(c => c.category).filter(Boolean))].sort();
-  const dl   = document.getElementById('ac-catlist');
-  dl.innerHTML = '';
-  cats.forEach(c => { const o = document.createElement('option'); o.value = c; dl.appendChild(o); });
+  // Category dropdown is the canonical "Categories" tab, plus an add-new escape hatch.
+  const sel = document.getElementById('ac-cat-sel');
+  sel.innerHTML = '<option value="">— Select category —</option>';
+  categoriesCache.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = c;
+    sel.appendChild(o);
+  });
+  const nw = document.createElement('option');
+  nw.value = '__new__'; nw.textContent = '+ New category…';
+  sel.appendChild(nw);
+  sel.value = '';
 
-  ['ac-verb', 'ac-meaning', 'ac-example', 'ac-category'].forEach(id =>
+  const newInput = document.getElementById('ac-cat-new');
+  newInput.value = ''; newInput.style.display = 'none';
+
+  ['ac-verb', 'ac-meaning', 'ac-example'].forEach(id =>
     document.getElementById(id).value = '');
   document.getElementById('addcard-overlay').classList.add('open');
   setTimeout(() => document.getElementById('ac-verb').focus(), 50);
+}
+
+// Reveal the free-text field only when "+ New category…" is chosen.
+function onAcCatChange() {
+  const sel = document.getElementById('ac-cat-sel');
+  const nw  = document.getElementById('ac-cat-new');
+  if (sel.value === '__new__') {
+    nw.style.display = 'block';
+    nw.focus();
+  } else {
+    nw.style.display = 'none';
+    nw.value = '';
+  }
 }
 
 function closeAddCard() {
@@ -1041,10 +1067,18 @@ function submitAddCard() {
   const verb     = document.getElementById('ac-verb').value.trim();
   const meaning  = document.getElementById('ac-meaning').value.trim();
   const example  = document.getElementById('ac-example').value.trim();
-  const category = document.getElementById('ac-category').value.trim();
+  const catSel   = document.getElementById('ac-cat-sel');
+  const category = catSel.value === '__new__'
+    ? document.getElementById('ac-cat-new').value.trim()
+    : catSel.value;
 
   if (!verb)    { showStatus('Please enter the phrasal verb.', 'err', 2500); document.getElementById('ac-verb').focus();    return; }
   if (!meaning) { showStatus('Please enter the meaning.',      'err', 2500); document.getElementById('ac-meaning').focus(); return; }
+  if (catSel.value === '__new__' && !category) {
+    showStatus('Please type the new category name.', 'err', 2500);
+    document.getElementById('ac-cat-new').focus();
+    return;
+  }
 
   // Fast client-side duplicate check; the server re-checks authoritatively.
   if (allCards.some(c => c.verb.toLowerCase() === verb.toLowerCase())) {
@@ -1066,6 +1100,7 @@ function submitAddCard() {
         return;
       }
       allCards.push(res.card);
+      if (res.categories) categoriesCache = res.categories;
       populateCategories();
       closeAddCard();
       showStatus(`Added "${res.card.verb}".`, 'ok', 2200);

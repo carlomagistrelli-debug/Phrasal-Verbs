@@ -9,8 +9,9 @@
 // can always reach the spreadsheet regardless of who is visiting.
 
 const SPREADSHEET_ID = '1v8h1SJ-n5OW0ntrwnmcLsx_7_OhGmsZDl19g0hSM1Q0';
-const CARDS_SHEET    = 'Common Phrasal Verbs';
-const PROGRESS_SHEET = 'Progress';
+const CARDS_SHEET      = 'Common Phrasal Verbs';
+const PROGRESS_SHEET   = 'Progress';
+const CATEGORIES_SHEET = 'Categories';
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('index')
@@ -23,11 +24,12 @@ function getInitialData(userKey) {
   const key = normalizeKey_(userKey);
   const row = findUserRow_(key);
   return {
-    cards:    getCards_(),
-    srs:      parseCell_(row, 1, {}),
-    newToday: parseCell_(row, 2, {}),
-    settings: parseCell_(row, 3, {}),
-    user:     key,
+    cards:      getCards_(),
+    categories: getCategories_(),
+    srs:        parseCell_(row, 1, {}),
+    newToday:   parseCell_(row, 2, {}),
+    settings:   parseCell_(row, 3, {}),
+    user:       key,
   };
 }
 
@@ -87,8 +89,54 @@ function addCard(card, userKey) {
   if (iE >= 0) rowArr[iE] = example;
   if (iC >= 0) rowArr[iC] = category;
   sheet.appendRow(rowArr);
+  if (category) ensureCategory_(category);
 
-  return { ok: true, card: { verb: verb, meaning: meaning, example: example, category: category } };
+  return {
+    ok: true,
+    card: { verb: verb, meaning: meaning, example: example, category: category },
+    categories: getCategories_(),
+  };
+}
+
+// Canonical category list — column A of the "Categories" tab.
+// Drops a header cell if present; trims, dedupes case-insensitively, sorts.
+function getCategories_() {
+  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(CATEGORIES_SHEET);
+  if (!sheet || sheet.getLastRow() === 0) return [];
+  const col  = sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues();
+  const out  = [];
+  const seen = {};
+  col.forEach((r, i) => {
+    const v = String(r[0] || '').trim();
+    if (!v) return;
+    if (i === 0 && (v.toLowerCase() === 'category' || v.toLowerCase() === 'categories')) return; // header
+    const k = v.toLowerCase();
+    if (seen[k]) return;
+    seen[k] = true;
+    out.push(v);
+  });
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+// Append a category to the "Categories" tab unless it's already there
+// (case-insensitive). Creates the tab with a header if it doesn't exist.
+function ensureCategory_(category) {
+  const cat = String(category || '').trim();
+  if (!cat) return;
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(CATEGORIES_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(CATEGORIES_SHEET);
+    sheet.appendRow(['Category']);
+    sheet.getRange(1, 1).setFontWeight('bold');
+  }
+  const last = sheet.getLastRow();
+  if (last > 0) {
+    const col = sheet.getRange(1, 1, last, 1).getValues();
+    if (col.some(r => String(r[0] || '').trim().toLowerCase() === cat.toLowerCase())) return;
+  }
+  sheet.appendRow([cat]);
 }
 
 // ── Private helpers ────────────────────────────────────────────────────────────
