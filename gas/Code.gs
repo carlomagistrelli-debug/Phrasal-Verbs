@@ -34,27 +34,79 @@ function getInitialData(userKey) {
 }
 
 function saveSRS(json, userKey) {
-  const sheet = getProgressSheet_();
-  const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
-  sheet.getRange(row, 2).setValue(JSON.stringify(json));
+  withLock_(() => {
+    const sheet = getProgressSheet_();
+    const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
+    sheet.getRange(row, 2).setValue(JSON.stringify(json));
+  });
 }
 
 function saveNewToday(json, userKey) {
-  const sheet = getProgressSheet_();
-  const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
-  sheet.getRange(row, 3).setValue(JSON.stringify(json));
+  withLock_(() => {
+    const sheet = getProgressSheet_();
+    const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
+    sheet.getRange(row, 3).setValue(JSON.stringify(json));
+  });
 }
 
 function saveSettings(json, userKey) {
-  const sheet = getProgressSheet_();
-  const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
-  sheet.getRange(row, 4).setValue(JSON.stringify(json));
+  withLock_(() => {
+    const sheet = getProgressSheet_();
+    const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
+    sheet.getRange(row, 4).setValue(JSON.stringify(json));
+  });
 }
 
 function resetProgress(userKey) {
-  const sheet = getProgressSheet_();
-  const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
-  sheet.getRange(row, 2, 1, 2).setValues([['', '']]);
+  withLock_(() => {
+    const sheet = getProgressSheet_();
+    const row   = findOrCreateUserRow_(normalizeKey_(userKey), sheet);
+    sheet.getRange(row, 2, 1, 2).setValues([['', '']]);
+  });
+}
+
+// One-time repair tool — run this once from the Apps Script editor (select
+// `mergeDuplicateProgressRows` and click Run) to undo damage from the old,
+// lock-free code. It collapses every set of rows sharing the same user name
+// (case-insensitive) into a single row, keeping the LONGEST non-empty value in
+// each column so the richest SRS/New-Today/Settings blob always survives.
+// Safe to run repeatedly — a clean sheet is left untouched. Check the
+// execution log for a summary of what it did.
+function mergeDuplicateProgressRows() {
+  return withLock_(() => {
+    const sheet = getProgressSheet_();
+    const data  = sheet.getDataRange().getValues();
+    const order   = [];   // user keys in first-seen order
+    const best    = {};   // key -> merged [user, srs, newToday, settings]
+    const keepRow = {};   // key -> 1-indexed sheet row of the kept (first) occurrence
+    const dupRows = [];   // 1-indexed sheet rows to delete
+
+    for (let i = 1; i < data.length; i++) {
+      const raw = String(data[i][0] == null ? '' : data[i][0]).trim();
+      const key = raw.toLowerCase();
+      if (!key) continue;
+      if (best[key] == null) {
+        best[key]    = [raw, '', '', ''];
+        keepRow[key] = i + 1;
+        order.push(key);
+      } else {
+        dupRows.push(i + 1);
+      }
+      // Keep the longest value seen for each data column (2..4 = idx 1..3).
+      for (let c = 1; c <= 3; c++) {
+        const v = String(data[i][c] == null ? '' : data[i][c]);
+        if (v.length > String(best[key][c]).length) best[key][c] = v;
+      }
+    }
+
+    order.forEach(key => sheet.getRange(keepRow[key], 1, 1, 4).setValues([best[key]]));
+    dupRows.sort((a, b) => b - a).forEach(r => sheet.deleteRow(r)); // bottom-up keeps indices valid
+
+    const summary = { duplicatesRemoved: dupRows.length, users: order.length };
+    Logger.log('mergeDuplicateProgressRows: removed %s duplicate row(s) across %s user(s)',
+               summary.duplicatesRemoved, summary.users);
+    return summary;
+  });
 }
 
 // Append a new phrasal verb to the shared cards sheet.
@@ -141,6 +193,16 @@ function ensureCategory_(category) {
 
 // ── Private helpers ────────────────────────────────────────────────────────────
 
+// Serialize every Progress-sheet mutation. Without this, the three saves the
+// client fires at once (SRS / New-Today / Settings) can each find "no row yet"
+// and each append its own duplicate row for the same user.
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { return fn(); }
+  finally { lock.releaseLock(); }
+}
+
 // The client-supplied name is the identity key. Trim it, cap its length, and
 // fall back to 'anonymous' so a blank key can never address an empty-named row.
 function normalizeKey_(userKey) {
@@ -191,14 +253,20 @@ function getProgressSheet_() {
   return sheet;
 }
 
-// Returns the row data array, or null if not found
+// Returns the row data array, or null if not found. If duplicate rows for the
+// same user still exist, return the richest one (most non-empty data cells) so
+// a half-empty stray row can never mask real progress on read.
 function findUserRow_(email) {
   const sheet = getProgressSheet_();
   const data  = sheet.getDataRange().getValues();
+  let best = null, bestScore = -1;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]).toLowerCase() === email.toLowerCase()) return data[i];
+    if (String(data[i][0]).toLowerCase() !== email.toLowerCase()) continue;
+    const score = [1, 2, 3].reduce(
+      (n, c) => n + (String(data[i][c] == null ? '' : data[i][c]).trim() ? 1 : 0), 0);
+    if (score > bestScore) { bestScore = score; best = data[i]; }
   }
-  return null;
+  return best;
 }
 
 // Returns the 1-indexed sheet row number, creating the row if needed
